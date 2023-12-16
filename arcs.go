@@ -6,11 +6,11 @@ import (
 
 // An ARC is a fixed-size in-memory cache with adaptive replacement caching
 type ARC struct {
-	cacheCapacity  int
-	t1Used, t2Used int
-	b1Used, b2Used int
+	cacheCapacity  int // cache capacity in bytes
+	t1Used, t2Used int // used storage for each cache section
+	b1Used, b2Used int // used storage for each ghost list
 
-	p int
+	p int // optimal size of t1
 
 	t1Queue, t2Queue *list.List
 	cacheT1, cacheT2 map[string][]byte
@@ -20,11 +20,6 @@ type ARC struct {
 
 	stats Stats
 }
-
-// type Stats struct {
-// 	Hits   int
-// 	Misses int
-// }
 
 // NewARC returns a pointer to a new ARC with a capacity of limit bytes
 func NewArc(limit int) *ARC {
@@ -256,7 +251,7 @@ func (arc *ARC) Set(key string, value []byte) bool {
 		return true
 	}
 
-	// Make room for the new item
+	// check if item cannot be added
 	for (arc.t1Used + arc.t2Used + itemSize) > arc.cacheCapacity {
 		// the replacement and sizing feature checks the following
 		// 1. if the queue has at least 1 element
@@ -266,17 +261,17 @@ func (arc *ARC) Set(key string, value []byte) bool {
 			// last item will get evicted
 			e := arc.t1Queue.Back()
 
-			//
 			if e != nil {
 				evictedKey := e.Value.(string)
 				evictedValue := arc.cacheT1[evictedKey]
 				delete(arc.cacheT1, evictedKey)
 				arc.t1Queue.Remove(e)
-				arc.t1Used -= len(evictedValue) + len(evictedKey)
+				arc.t1Used -= (len(evictedValue) + len(evictedKey))
 
 				// Move to b1
 				arc.b1Queue.PushFront(evictedKey)
 				arc.cacheB1[evictedKey] = evictedValue
+				arc.b1Used += (len(evictedKey) + len(evictedValue))
 			}
 		} else {
 			// Evict from t2
@@ -286,11 +281,12 @@ func (arc *ARC) Set(key string, value []byte) bool {
 				evictedValue := arc.cacheT2[evictedKey]
 				delete(arc.cacheT2, evictedKey)
 				arc.t2Queue.Remove(e)
-				arc.t2Used -= len(evictedValue) + len(evictedKey)
+				arc.t2Used -= (len(evictedValue) + len(evictedKey))
 
 				// Move to b2
 				arc.b2Queue.PushFront(evictedKey)
 				arc.cacheB2[evictedKey] = evictedValue
+				arc.b2Used += (len(evictedKey) + len(evictedValue))
 			}
 		}
 	}
