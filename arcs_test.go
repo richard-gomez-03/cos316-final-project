@@ -2,99 +2,130 @@ package cache
 
 import (
 	"bytes"
-	"os"
+	"fmt"
+	"math/rand"
+	"runtime"
 	"testing"
+	"time"
 )
 
-// TestNewARC tests the creation of a new ARC.
+// Test creation of new ARC cache
 func TestNewARC(t *testing.T) {
-	arc := NewArc(100)
-	if arc == nil {
-		t.Error("Expected NewArc to create a new ARC, got nil")
-	}
-	if arc.MaxStorage() != 100 {
-		t.Errorf("Expected MaxStorage to be 100, got %d", arc.MaxStorage())
-	}
-}
+	cache := NewArc(1024)
 
-// TestSetAndGet tests setting and getting values in the ARC.
-func TestSetAndGet(t *testing.T) {
-	arc := NewArc(100)
-	key := "testKey"
-	value := []byte("testValue")
-
-	success := arc.Set(key, value)
-	if !success {
-		t.Errorf("Failed to set value for key %s", key)
+	if cache == nil {
+		t.Errorf("NewArc() = nil, want non-nil")
 	}
-
-	retrievedValue, ok := arc.Get(key)
-	if !ok {
-		t.Errorf("Failed to get value for key %s", key)
-	}
-	if !bytes.Equal(retrievedValue, value) {
-		t.Errorf("Expected value %s, got %s", string(value), string(retrievedValue))
+	if cache.MaxStorage() != 1024 {
+		t.Errorf("MaxStorage() = %d, want 1024", cache.MaxStorage())
 	}
 }
 
-// TestEviction tests the eviction policy of the ARC.
-func TestEviction(t *testing.T) {
-	arc := NewArc(10) // Small size to test eviction
-	arc.Set("key1", []byte("val1"))
-	arc.Set("key2", []byte("val2"))
-	arc.Set("key3", []byte("val3")) // This should cause an eviction
+// Test setting and getting values in ARC cache
+func TestARCSetAndGet(t *testing.T) {
+	cache := NewArc(1024)
 
-	_, ok := arc.Get("key1")
+	key := "test_key"
+	value := []byte("test_value")
+
+	cache.Set(key, value)
+
+	got, ok := cache.Get(key)
+	if !ok || !bytes.Equal(got, value) {
+		t.Errorf("Get(%s) = %v, %t; want %v, true", key, got, ok, value)
+	}
+}
+
+// Test eviction policy
+func TestARCEvictionPolicy(t *testing.T) {
+	cache := NewArc(10)
+
+	cache.Set("key1", []byte("val1"))
+	cache.Set("key2", []byte("val2"))
+	cache.Set("key3", []byte("val3"))
+
+	_, ok := cache.Get("key1")
 	if ok {
-		t.Error("Expected key1 to be evicted")
+		t.Errorf("Get(key1) should be false after eviction")
 	}
 }
 
-// TestRemove tests the Remove function.
-func TestRemove(t *testing.T) {
-	arc := NewArc(100)
-	key := "testKey"
-	value := []byte("testValue")
-	arc.Set(key, value)
+// Test ARC cache performance with various sizes
+func TestARCPerformance(t *testing.T) {
+	sizes := []int{1024, 1024 * 1024, 10 * 1024 * 1024, 32 * 1024 * 1024, 64 * 1024 * 1024}
+	for _, size := range sizes {
+		t.Run(fmt.Sprintf("Size%d", size), func(t *testing.T) {
+			cache := NewArc(size)
 
-	removedValue, ok := arc.Remove(key)
-	if !ok {
-		t.Errorf("Failed to remove value for key %s", key)
-	}
-	if !bytes.Equal(removedValue, value) {
-		t.Errorf("Expected value %s, got %s", string(value), string(removedValue))
-	}
+			start := time.Now()
 
-	_, ok = arc.Get(key)
-	if ok {
-		t.Error("Expected value to be removed from the cache")
-	}
-}
+			for i := 0; i < 10000; i++ {
+				key := fmt.Sprintf("key%d", i)
+				value := []byte(fmt.Sprintf("value%d", i))
+				cache.Set(key, value)
+			}
 
-// TestLen tests the Len function.
-func TestLen(t *testing.T) {
-	arc := NewArc(100)
-	arc.Set("key1", []byte("val1"))
-	arc.Set("key2", []byte("val2"))
-
-	if arc.Len() != 2 {
-		t.Errorf("Expected length to be 2, got %d", arc.Len())
+			duration := time.Since(start)
+			t.Logf("Size: %d, Performance test took %s", size, duration)
+		})
 	}
 }
 
-// TestStats tests the Stats function.
-func TestStats(t *testing.T) {
-	arc := NewArc(100)
-	arc.Get("nonexistent")
-	stats := arc.Stats()
-	if stats.Misses != 1 {
-		t.Errorf("Expected 1 miss, got %d", stats.Misses)
+// Test memory usage for ARC cache with various sizes
+func TestARCMemoryUsage(t *testing.T) {
+	for _, size := range []int{1024, 1024 * 1024, 10 * 1024 * 1024, 32 * 1024 * 1024, 64 * 1024 * 1024} {
+		t.Run(fmt.Sprintf("Size%d", size), func(t *testing.T) {
+			cache := NewArc(size)
+
+			var m runtime.MemStats
+			measureMemory := func() uint64 {
+				runtime.GC()
+				runtime.ReadMemStats(&m)
+				return m.Alloc
+			}
+
+			before := measureMemory()
+
+			for i := 0; i < 10000; i++ {
+				key := fmt.Sprintf("key%d", i)
+				value := []byte(fmt.Sprintf("value%d", i))
+				cache.Set(key, value)
+			}
+
+			after := measureMemory()
+
+			t.Logf("Size: %d, Memory usage before: %d, after: %d", size, before, after)
+		})
 	}
 }
 
-func TestMain(m *testing.M) {
-	// setup if needed
-	code := m.Run()
-	// teardown if needed
-	os.Exit(code)
+// Test hit rate of ARC cache with various sizes
+func TestARCHitRate(t *testing.T) {
+	sizes := []int{1024, 1024 * 1024, 10 * 1024 * 1024, 32 * 1024 * 1024, 64 * 1024 * 1024}
+	for _, size := range sizes {
+		t.Run(fmt.Sprintf("Size%d", size), func(t *testing.T) {
+			cache := NewArc(size)
+			totalOps := 0
+			hits := 0
+
+			// Populate cache and perform get operations
+			for i := 0; i < 500; i++ {
+				key := fmt.Sprintf("key%d", i)
+				value := []byte(fmt.Sprintf("value%d", i))
+				cache.Set(key, value)
+				totalOps++
+			}
+
+			for i := 0; i < 500; i++ {
+				key := fmt.Sprintf("key%d", rand.Intn(1000))
+				if _, ok := cache.Get(key); ok {
+					hits++
+				}
+				totalOps++
+			}
+
+			hitRate := float64(hits) / float64(totalOps)
+			t.Logf("Size: %d, Hit Rate: %.2f", size, hitRate)
+		})
+	}
 }

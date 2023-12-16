@@ -78,7 +78,7 @@ func TestMRUPerformance(t *testing.T) {
 }
 
 // Test memory usage of MRU cache with various sizes
-func TestMRUMemoryUsageWithDifferentSizes(t *testing.T) {
+func TestMRUMemoryUsage(t *testing.T) {
 	for _, size := range []int{1024, 1024 * 1024, 10 * 1024 * 1024, 32 * 1024 * 1024, 64 * 1024 * 1024} {
 		t.Run(fmt.Sprintf("Size%d", size), func(t *testing.T) {
 			cache := NewMRU(size)
